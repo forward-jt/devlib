@@ -150,4 +150,50 @@ Available Collectors
 
 This section lists collectors that are currently part of devlib.
 
+#. BPF Collector
+   The Collector cooperates with the tool ``bpftrace`` installed on the trace target.
+   A config that describes the tracer should be provided for generating the script.
+   The config contains two parts: ``maps`` and ``hooks``.
+   * ``maps``:
+     A json object, in which each key/value pair indicates the id of a map and the key to access it.
+   * ``hooks``:
+     A json object with each key is the hook target.
+     The corresponding value is also a json object, with following options available:
+     * default_infos: A boolean, indicates whether the default trace log should be porvided.
+     * condition: A string, specifies the condition that the hook should be triggered.
+     * store_maps: A json object, each key/value pair in it indicates the target map and the data to store.
+     * read_maps: A list that contains the map that would be read in the hook.
+     * custom_infos: A json object, with each key in it indicates the name of the additional trace log, and the corresponding value is also a json object that indicates the ``printf`` specification and the corresponding data.
+  
+   Following is an example that traces the latency of the function ``can_migrate_task()`` of the command ``find`` alongside the default infos:
+
+.. code-block:: JSON
+        {
+                "maps": {
+                        "map0": "cpu, pid"
+                },
+                "hooks": {
+                        "kfunc:can_migrate_task": {
+                                "default_info": false,
+                                "condition": "comm == \"find\"",
+                                "store_maps": {
+                                        "map0": "elapsed"
+                                }
+                        },
+                        "kretfunc:can_migrate_task": {
+                                "default_info": true,
+                                "condition": "comm == \"find\"",
+                                "read_maps": [
+                                        "map0"
+                                ],
+                                "custom_infos": {
+                                        "lat": {
+                                                "spec": "%lu",
+                                                "val": "elapsed - {{map0}}"
+                                        }
+                                }
+                        }
+                }
+        }
+
 .. todo:: Add collectors
