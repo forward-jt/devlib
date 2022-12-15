@@ -1,6 +1,9 @@
 from devlib.collector import (CollectorBase, CollectorOutput, CollectorOutputEntry)
+
+from os import path
+from tempfile import NamedTemporaryFile
 import json
-import tempfile
+import re
 
 class BpfUtil:
     def __init__(self, target):
@@ -76,6 +79,13 @@ class BpfHook:
         for m in read:
             self.vals = self.vals.replace(maps[m].placeholder(), str(maps[m]))
 
+class BpfOutputFormater:
+    @staticmethod
+    def to_csv(file_path):
+        with open(file_path, 'r') as f:
+            pass
+
+
 class BpfCodeGenerator:
     default_infos = {
             'timestamp': {'spec': '%lu', 'val': 'nsecs'},
@@ -138,10 +148,63 @@ class BpfCodeGenerator:
             config = json.loads(f.read())
             return BpfCodeGenerator.gen_from_json(config)
 
+class BpfTraceLog:
+    def __init__(self, title):
+        self.title = title
+        self.title_hash = hash(str(title))
+        self.rows = []
+
+    def match_title(self, title):
+        return self.title_hash == hash(str(title))
+
+    def append(self, data):
+        self.rows.append([
+            str(data[col])
+            for col in self.title
+        ])
+
+    def __str__(self):
+        return '\n'.join([
+            ','.join(row)
+            for row in [self.title] + self.rows
+        ])
+
+    def to_csv(self, output_path):
+        with open(output_path, 'w') as f:
+            f.write(str(self))
+
+class BpfTraceLogList(list):
+    def __init__(self):
+        super(BpfTraceLogList, self).__init__()
+
+    def push_data(self, data):
+        keys = data.keys()
+        for btl in self:
+            if not btl.match_title(keys):
+                continue
+            btl.append(data)
+            return
+
+        new_btl = BpfTraceLog(keys)
+        new_btl.append(data)
+        self.append(new_btl)
+
+    def to_csvs(self, file_prefix):
+        output = CollectorOutput()
+
+        i = 0
+        for btl in self:
+            out_path = '{0}_{1}.csv'.format(file_prefix, i)
+            btl.to_csv(out_path)
+            output.append(CollectorOutputEntry(out_path, 'file'))
+            i += 1
+
+        return output
+
 class BpfCollector(CollectorBase):
     def __init__(self, target, config_file, output_path = ''):
         super(BpfCollector, self).__init__(target)
-        self.output_path = output_path or '/tmp/bpf-result'
+        self.set_output(output_path or '/tmp/result')
 
         self.logger.debug('Generating tracer from file {0}'.format(config_file))
         self.bt = BpfCodeGenerator.gen_from_file(config_file)
@@ -150,13 +213,16 @@ class BpfCollector(CollectorBase):
         self.out_file = target.path.join(target.working_directory, 'result')
 
         self.logger.debug('Deploying tracer to target: {0}'.format(target.hostname))
-        with tempfile.NamedTemporaryFile(mode = 'w', encoding='utf8') as tf:
+        with NamedTemporaryFile(mode = 'w', encoding='utf8') as tf:
             tf.write(self.bt)
             tf.flush()
 
             self.target.push(tf.name, self.trace_file)
 
         self.running = False
+
+    def set_output(self, output_path):
+        self.output_path = path.abspath(output_path)
 
     def reset(self):
         if self.running:
@@ -177,13 +243,25 @@ class BpfCollector(CollectorBase):
     def get_data(self):
         self.logger.debug('Use {0} as output file'.format(self.output_path))
 
-        self.target.pull('{0}.filt'.format(self.out_file), self.output_path)
+        with NamedTemporaryFile(mode = 'w', encoding = 'utf-8') as tf:
+            self.target.pull(self.out_file, path.abspath(tf.name))
+            return self.__to_csvs(path.abspath(tf.name))
 
-        output = CollectorOutput()
-        output.append(CollectorOutputEntry(self.output_path, 'file'))
-
-        return output
+        return CollectorOutput()
 
     def __post_trace(self):
         self.target.execute('sync', as_root = True)
-        self.target.execute('cat {0} | grep {1} > {0}.filt'.format(self.out_file, "'^\{.*\}$'"), as_root = True)
+
+    def __to_csvs(self, tfn):
+        btll = BpfTraceLogList()
+        pat = re.compile('\{.*\}$')
+
+        with open(tfn, 'r') as f:
+            for line in f.readlines():
+                match = re.match(pat, line)
+                if match is None:
+                    continue
+
+                btll.push_data(json.loads(match.group()))
+
+        return btll.to_csvs(path.abspath(self.output_path))
