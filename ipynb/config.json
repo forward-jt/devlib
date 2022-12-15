@@ -1,0 +1,28 @@
+{
+	"maps": {
+		"map0": "cpu, pid",
+		"map1": "pid"
+	},
+	"hooks": {
+		"kfunc:can_migrate_task": {
+			"default_info": false,
+			"condition": "comm == \"stress-ng\"",
+			"store_maps": {
+				"map0": "elapsed"
+			}
+		},
+		"kretfunc:can_migrate_task": {
+			"default_info": true,
+			"condition": "comm == \"stress-ng\"",
+			"read_maps": [
+				"map0"
+			],
+			"custom_infos": {
+				"latency": {
+					"spec": "%lu",
+					"val": "elapsed - {{map0}}"
+				}
+			}
+		}
+	}
+}

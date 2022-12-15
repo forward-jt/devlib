@@ -1,8 +1,10 @@
 *.pyc
 *.pyo
 *.orig
+*.ipynb_checkpoints
 .ropeproject
 *.egg-info
+*.csv
 devlib/bin/scripts/shutils
 doc/_build/
 build/
