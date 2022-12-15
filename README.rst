@@ -11,7 +11,8 @@ Installation
 
 ::
 
-        sudo -H pip install devlib
+        python3 setup.py build
+        sudo python3 setup.py install
 
 
 Dependencies
