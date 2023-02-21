@@ -66,7 +66,7 @@ class BpfHook:
 
     def store_map(self, maps, stored):
         self.store_map_str = '\n'.join([
-            '\t{0} = {1}'.format(str(maps[m]), stored[m])
+            '\t{0} = {1};'.format(str(maps[m]), stored[m])
             for m in stored
         ])
 
